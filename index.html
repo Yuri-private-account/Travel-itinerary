@@ -11,9 +11,8 @@
 
     <div id="map-area">
         <div id="map"></div>
-        <div class="mock-search">
-            <button id="add-mock-spot">📍 ここに「水族館 (2時間)」を追加</button>
-        </div>
+        <div class="map-hint">💡 地図をタップして新しい場所を登録</div>
+        <button id="locate-btn" class="locate-button">📍 現在地を表示</button>
     </div>
 
     <div id="itinerary-area">
@@ -21,31 +20,24 @@
             <span>旅の予定</span>
             <button id="sync-btn" class="sync-button">🔄 更新を共有</button>
         </div>
-        <ul id="itinerary-list">
-            </ul>
+        <ul id="itinerary-list"></ul>
     </div>
 
     <div id="bottom-sheet" class="hidden">
         <div class="sheet-handle"></div>
         <button id="close-sheet">閉じる</button>
-        
         <div class="sheet-content">
             <label>スポット名</label>
             <input type="text" id="edit-title" class="form-input">
-
             <label>滞在時間（時間）</label>
             <input type="number" id="edit-duration" class="form-input" step="0.5" min="0.5">
-
             <label>ブロックの色（18色）</label>
-            <div id="color-picker" class="color-picker">
-                </div>
-
+            <div id="color-picker" class="color-picker"></div>
             <div class="cost-box">
                 <h3>💰 費用の概算とメモ</h3>
                 <p id="sheet-cost" class="price"></p>
                 <textarea id="edit-memo" class="form-textarea" rows="3" placeholder="メモを自由に入力"></textarea>
             </div>
-
             <button id="save-spot-btn" class="primary-btn">内容を保存</button>
             <button id="delete-spot-btn" class="danger-btn">この予定を削除</button>
         </div>
