@@ -141,8 +141,19 @@ function addSpotToItinerary(spotInfo) {
         memo: "",
         color: colors[Math.floor(Math.random() * colors.length)]
     };
-    itineraryData.push(newBlock);
-    saveData();
+
+    if (window.fbDB) {
+        // トランザクション：サーバーの最新配列を取得し、末尾に追加して返す
+        window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
+            let data = currentData || [];
+            data.push(newBlock);
+            return data;
+        });
+    } else {
+        // オフライン時のフォールバック
+        itineraryData.push(newBlock);
+        saveData();
+    }
 }
 
 function renderItinerary() {
@@ -203,21 +214,32 @@ function closeSheet() {
 }
 
 document.getElementById('save-spot-btn').addEventListener('click', () => {
-    const spotIndex = itineraryData.findIndex(s => s.id === currentEditingId);
-    if (spotIndex > -1) {
-        itineraryData[spotIndex].title = document.getElementById('edit-title').value;
-        itineraryData[spotIndex].duration = parseFloat(document.getElementById('edit-duration').value);
-        itineraryData[spotIndex].memo = document.getElementById('edit-memo').value;
-        itineraryData[spotIndex].color = document.querySelector('.color-circle.selected').dataset.color;
-        saveData(); // Firebaseへ自動同期
+    if (window.fbDB) {
+        window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
+            if (!currentData) return [];
+            // 最新データの中から編集中のIDを探して更新
+            const spotIndex = currentData.findIndex(s => s.id === currentEditingId);
+            if (spotIndex > -1) {
+                currentData[spotIndex].title = document.getElementById('edit-title').value;
+                currentData[spotIndex].duration = parseFloat(document.getElementById('edit-duration').value);
+                currentData[spotIndex].memo = document.getElementById('edit-memo').value;
+                currentData[spotIndex].color = document.querySelector('.color-circle.selected').dataset.color;
+            }
+            return currentData; // 更新した配列をサーバーに返す
+        });
         closeSheet();
     }
 });
 
 document.getElementById('delete-spot-btn').addEventListener('click', () => {
     if(confirm('この予定を削除しますか？')){
-        itineraryData = itineraryData.filter(s => s.id !== currentEditingId);
-        saveData(); // Firebaseへ自動同期
+        if (window.fbDB) {
+            window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
+                if (!currentData) return [];
+                // 削除対象のID「以外」を残した新しい配列をサーバーに返す
+                return currentData.filter(s => s.id !== currentEditingId);
+            });
+        }
         closeSheet();
     }
 });
