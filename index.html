@@ -18,7 +18,7 @@
     <div id="itinerary-area">
         <div class="area-header">
             <span>旅の予定</span>
-            <button id="sync-btn" class="sync-button">🔄 更新を共有</button>
+            <button id="sync-btn" class="sync-button">🔄 リアルタイム同期中</button>
         </div>
         <ul id="itinerary-list"></ul>
     </div>
@@ -46,6 +46,62 @@
 
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+            "firebase/database": "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+    import { initializeApp } from "firebase/app";
+    import { getDatabase, ref, set, onValue } from "firebase/database";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+
+    // ★ここにFirebaseコンソールからコピーした設定を貼り付けてください★
+    const firebaseConfig = {
+        apiKey: "AIzaSyCGoGzGK1xPZf2QY6si3qvO2k9yNnkGx_o",
+        authDomain: "yows-1st-database.firebaseapp.com",
+        databaseURL: "https://yows-1st-database-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "yows-1st-database",
+        storageBucket: "yows-1st-database.firebasestorage.app",
+        messagingSenderId: "162209423635",
+        appId: "1:162209423635:web:0f3e78ed371464d289fae6",
+    };
+
+    // 初期化
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    // app.jsで使えるようにグローバル変数に公開
+    window.fbDB = db;
+    window.fbRef = ref;
+    window.fbSet = set;
+    window.fbOnValue = onValue;
+
+    // サイトを開いたら自動で匿名ログインを実行
+    signInAnonymously(auth).catch((error) => {
+        console.error("認証エラー:", error);
+        alert("データベースの認証に失敗しました。");
+    });
+
+    // ログイン状態を監視し、成功したら同期を開始する
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            console.log("ログイン成功！ UID:", user.uid);
+            // app.js 内に定義した同期開始関数を呼び出す
+            if (window.startDatabaseSync) {
+                window.startDatabaseSync();
+            }
+        }
+    });
+    </script>
+
     <script src="app.js"></script>
 </body>
 </html>
