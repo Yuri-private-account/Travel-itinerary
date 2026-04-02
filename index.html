@@ -21,25 +21,36 @@
         >
         
         <div id="map"></div>
-        <!--<div class="map-hint">💡 地図をタップして新しい場所を登録</div>-->
         <button id="locate-btn" class="locate-button">📍 現在地を表示</button>
     </div>
 
     <div id="itinerary-area">
         <div class="area-header">
             <span>旅の予定</span>
-            <button id="sync-btn" class="sync-button">🔄 リアルタイム同期中</button>
+            <div class="header-actions">
+                <button id="add-manual-btn" class="header-add-btn">＋ ブロック追加</button>
+                <button id="sync-btn" class="sync-button">🔄 リアルタイム同期中</button>
+            </div>
         </div>
+
+        <div class="day-tabs-bar">
+            <div id="day-tabs" class="day-tabs"></div>
+            <button id="add-day-btn" class="day-add-btn">＋ 日を追加</button>
+        </div>
+
         <ul id="itinerary-list"></ul>
-        <div id="total-summary" class="total-summary">合計金額: 0 円</div>
+        <div id="total-summary" class="total-summary">この日の合計金額: 0 円 / 旅行全体: 0 円</div>
     </div>
 
     <div id="bottom-sheet" class="hidden">
             <div class="sheet-handle"></div>
             <button id="close-sheet">閉じる</button>
         <div class="sheet-content">
-            <label>スポット名</label>
-            <input type="text" id="edit-title" class="form-input">
+            <label>スポット名・予定名</label>
+            <input type="text" id="edit-title" class="form-input" placeholder="例: 電車で移動, 旅館, 昼食">
+
+            <label>日付タブ</label>
+            <select id="edit-day" class="form-input"></select>
         
             <label>開始時刻</label>
             <input type="time" id="edit-start-time" class="form-input">
@@ -102,7 +113,6 @@
     import { getDatabase, ref, set, onValue, runTransaction } from "firebase/database";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
-    // ★ここにFirebaseコンソールからコピーした設定を貼り付けてください★
     const firebaseConfig = {
         apiKey: "AIzaSyCGoGzGK1xPZf2QY6si3qvO2k9yNnkGx_o",
         authDomain: "yows-1st-database.firebaseapp.com",
@@ -113,29 +123,24 @@
         appId: "1:162209423635:web:0f3e78ed371464d289fae6",
     };
 
-    // 初期化
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const auth = getAuth(app);
 
-    // app.jsで使えるようにグローバル変数に公開
     window.fbDB = db;
     window.fbRef = ref;
     window.fbSet = set;
     window.fbOnValue = onValue;
     window.fbRunTransaction = runTransaction;
 
-    // サイトを開いたら自動で匿名ログインを実行
     signInAnonymously(auth).catch((error) => {
         console.error("認証エラー:", error);
         alert("データベースの認証に失敗しました。");
     });
 
-    // ログイン状態を監視し、成功したら同期を開始する
     onAuthStateChanged(auth, (user) => {
         if (user) {
             console.log("ログイン成功！ UID:", user.uid);
-            // app.js 内に定義した同期開始関数を呼び出す
             if (window.startDatabaseSync) {
                 window.startDatabaseSync();
             }
