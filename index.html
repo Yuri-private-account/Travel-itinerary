@@ -59,7 +59,7 @@
 
     <script type="module">
     import { initializeApp } from "firebase/app";
-    import { getDatabase, ref, set, onValue } from "firebase/database";
+    import { getDatabase, ref, set, onValue, runTransaction } from "firebase/database";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
     // ★ここにFirebaseコンソールからコピーした設定を貼り付けてください★
@@ -83,6 +83,7 @@
     window.fbRef = ref;
     window.fbSet = set;
     window.fbOnValue = onValue;
+    window.fbRunTransaction = runTransaction;
 
     // サイトを開いたら自動で匿名ログインを実行
     signInAnonymously(auth).catch((error) => {
