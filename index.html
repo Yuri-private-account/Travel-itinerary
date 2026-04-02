@@ -10,6 +10,8 @@
 <body>
 
     <div id="map-area">
+        <input type="text" id="pac-input" placeholder="🔍 場所を検索（例: 海遊館）">
+        
         <div id="map"></div>
         <div class="map-hint">💡 地図をタップして新しい場所を登録</div>
         <button id="locate-btn" class="locate-button">📍 現在地を表示</button>
@@ -103,6 +105,9 @@
     });
     </script>
 
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places"></script>
+
     <script src="app.js"></script>
+    
 </body>
 </html>
