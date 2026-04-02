@@ -56,12 +56,17 @@ function renderMapMarkers() {
     allSpots.forEach(spot => {
         const marker = L.marker([spot.lat, spot.lng]);
         const popupContent = document.createElement('div');
+        
+        // 追記: Googleマップを開くためのURL（緯度経度を渡す）
+        const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
+
         popupContent.innerHTML = `
             <p class="popup-title">${spot.title}</p>
-            <button class="popup-btn">📍 しおりに追加</button>
+            <button class="popup-btn add-btn">📍 しおりに追加</button>
+            <a href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="popup-btn" style="display:block; text-align:center; text-decoration:none; background:#34a853; margin-top:8px;">🗺️ Googleマップで見る</a>
         `;
         
-        popupContent.querySelector('.popup-btn').addEventListener('click', () => {
+        popupContent.querySelector('.add-btn').addEventListener('click', () => {
             addSpotToItinerary(spot);
             map.closePopup();
         });
@@ -279,5 +284,48 @@ if (syncBtn) {
     syncBtn.addEventListener('click', () => {
         syncBtn.textContent = "✅ 最新の状態です";
         setTimeout(() => { syncBtn.textContent = "🔄 リアルタイム同期中"; }, 3000);
+    });
+}
+
+// --- 8. Google Places 検索機能 ---
+const searchInput = document.getElementById('pac-input');
+
+// Google Maps APIが正しく読み込まれているか確認
+if (typeof google !== 'undefined') {
+    const autocomplete = new google.maps.places.Autocomplete(searchInput);
+    
+    // 場所が選択されたときの処理
+    autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        
+        // 候補から選ばれなかった場合（エンターキーを押しただけ等）
+        if (!place.geometry || !place.geometry.location) {
+            alert("検索候補から場所を選択してください。");
+            return;
+        }
+
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        const spotName = place.name; // Googleが持つ正式名称
+
+        // 地図をその場所に移動させる
+        map.setView([lat, lng], 15);
+
+        // 自動的にカスタムスポットとして地図に登録
+        if (confirm(`「${spotName}」を地図に登録しますか？`)) {
+            const newCustomSpot = {
+                title: spotName,
+                lat: lat,
+                lng: lng,
+                estimated: 2000,
+                duration: 1.0
+            };
+            customMapSpots.push(newCustomSpot);
+            localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
+            renderMapMarkers();
+            
+            // 検索窓を空にする
+            searchInput.value = ''; 
+        }
     });
 }
