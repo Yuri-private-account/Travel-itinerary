@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>旅行のしおり</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style_mobilefix.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
@@ -28,14 +28,14 @@
         <div class="area-header">
             <span>旅の予定</span>
             <div class="header-actions">
-                <button id="add-manual-btn" class="header-add-btn">＋ ブロック追加</button>
-                <button id="sync-btn" class="sync-button">🔄 リアルタイム同期中</button>
+                <button type="button" id="add-manual-btn" class="header-add-btn">＋ ブロック追加</button>
+                <button type="button" id="sync-btn" class="sync-button">🔄 リアルタイム同期中</button>
             </div>
         </div>
 
         <div class="day-tabs-bar">
             <div id="day-tabs" class="day-tabs"></div>
-            <button id="add-day-btn" class="day-add-btn">＋ 日を追加</button>
+            <button type="button" id="add-day-btn" class="day-add-btn">＋ 日を追加</button>
         </div>
 
         <ul id="itinerary-list"></ul>
@@ -150,7 +150,7 @@
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB0FIyWH6HiIBzuMoUcPXBj7Ee9yf6oElU&libraries=places"></script>
 
-    <script src="app.js"></script>
+    <script src="app_fixed.js"></script>
     
 </body>
 </html>
