@@ -80,6 +80,8 @@ function renderMapMarkers() {
 
 // 地図タップでカスタムスポット追加
 map.on('click', function(e) {
+    if (isSearching) return;
+
     const spotName = prompt("📍 この場所に新しいスポットを登録しますか？\n名前を入力してください:");
     if (spotName && spotName.trim() !== "") {
         const newCustomSpot = {
