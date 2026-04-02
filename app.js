@@ -6,9 +6,9 @@ const colors = [
 ];
 
 // --- 2. データの初期化 ---
-// しおりのデータはFirebaseから降ってくるのを待つため、初期値は空
 let itineraryData = [];
-// カスタムスポット（地図上のピン）は端末ごとにローカル保存
+
+// カスタムスポットはローカル + Firebase同期の両対応
 let customMapSpots = JSON.parse(localStorage.getItem('customMapSpots')) || [];
 let currentEditingId = null; 
 
@@ -49,7 +49,50 @@ L.tileLayer('https://{s}.tile.openstreetmap.jp/{z}/{x}/{y}.png', {
 
 let markersLayer = L.layerGroup().addTo(map);
 
-// --- app.js 76行目付近 ---
+function buildGoogleMapsUrl(spot) {
+    const queryText =
+        spot.address
+            ? `${spot.title}, ${spot.address}`
+            : spot.title
+                ? spot.title
+                : `${spot.lat},${spot.lng}`;
+
+    const query = encodeURIComponent(queryText);
+
+    if (spot.placeId) {
+        return `https://www.google.com/maps/search/?api=1&query=${query}&query_place_id=${encodeURIComponent(spot.placeId)}`;
+    }
+
+    return `https://www.google.com/maps/search/?api=1&query=${query}`;
+}
+
+function saveCustomSpot(spot) {
+    if (!spot.id) {
+        spot.id = Date.now().toString();
+    }
+    spot.isCustom = true;
+
+    if (window.fbDB) {
+        // mapSpots/{id} に保存
+        const spotRef = window.fbRef(window.fbDB, `mapSpots/${spot.id}`);
+        window.fbSet(spotRef, spot);
+    } else {
+        customMapSpots.push(spot);
+        localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
+        renderMapMarkers();
+    }
+}
+
+function deleteCustomSpot(spotId) {
+    if (window.fbDB) {
+        const spotRef = window.fbRef(window.fbDB, `mapSpots/${spotId}`);
+        window.fbSet(spotRef, null);
+    } else {
+        customMapSpots = customMapSpots.filter(s => s.id !== spotId);
+        localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
+        renderMapMarkers();
+    }
+}
 
 function renderMapMarkers() {
     markersLayer.clearLayers();
@@ -58,20 +101,32 @@ function renderMapMarkers() {
     allSpots.forEach(spot => {
         const marker = L.marker([spot.lat, spot.lng]);
         const popupContent = document.createElement('div');
-        
-        // 正しいGoogleマップ検索URLの形式
-        const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
+
+        const googleMapsUrl = buildGoogleMapsUrl(spot);
+        const deleteButtonHtml = spot.isCustom
+            ? `<button class="popup-btn delete-btn" style="background:#d9534f; margin-top:8px;">🗑️ このスポットを削除</button>`
+            : '';
 
         popupContent.innerHTML = `
             <p class="popup-title">${spot.title}</p>
             <button class="popup-btn add-btn">📍 しおりに追加</button>
             <a href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="popup-btn" style="display:block; text-align:center; text-decoration:none; background:#34a853; margin-top:8px; color:white;">🗺️ Googleマップで見る</a>
+            ${deleteButtonHtml}
         `;
-        
+
         popupContent.querySelector('.add-btn').addEventListener('click', () => {
             addSpotToItinerary(spot);
             map.closePopup();
         });
+
+        if (spot.isCustom) {
+            popupContent.querySelector('.delete-btn').addEventListener('click', () => {
+                if (confirm(`「${spot.title}」を削除しますか？`)) {
+                    deleteCustomSpot(spot.id);
+                    map.closePopup();
+                }
+            });
+        }
 
         marker.bindPopup(popupContent);
         markersLayer.addLayer(marker);
@@ -80,20 +135,23 @@ function renderMapMarkers() {
 
 // 地図タップでカスタムスポット追加
 map.on('click', function(e) {
-    if (isSearching) return;
+    if (typeof isSearching !== 'undefined' && isSearching) return;
 
     const spotName = prompt("📍 この場所に新しいスポットを登録しますか？\n名前を入力してください:");
     if (spotName && spotName.trim() !== "") {
         const newCustomSpot = {
-            title: spotName,
+            id: Date.now().toString(),
+            title: spotName.trim(),
             lat: e.latlng.lat,
             lng: e.latlng.lng,
             estimated: 2000,
-            duration: 1.0
+            duration: 1.0,
+            address: "",
+            placeId: "",
+            isCustom: true
         };
-        customMapSpots.push(newCustomSpot);
-        localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
-        renderMapMarkers();
+
+        saveCustomSpot(newCustomSpot);
     }
 });
 
@@ -261,13 +319,20 @@ overlay.addEventListener('click', closeSheet);
 // index.htmlの認証が完了した直後に呼ばれる
 window.startDatabaseSync = () => {
     if (!window.fbDB) return;
+
     const itineraryRef = window.fbRef(window.fbDB, 'itinerary');
-    
-    // データが変更されるたびに自動で降ってくる
     window.fbOnValue(itineraryRef, (snapshot) => {
         const data = snapshot.val();
         itineraryData = data ? Object.values(data) : [];
-        renderItinerary(); // 再描画
+        renderItinerary();
+    });
+
+    const mapSpotsRef = window.fbRef(window.fbDB, 'mapSpots');
+    window.fbOnValue(mapSpotsRef, (snapshot) => {
+        const data = snapshot.val();
+        customMapSpots = data ? Object.values(data) : [];
+        localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
+        renderMapMarkers();
     });
 };
 
@@ -297,7 +362,6 @@ let isSearching = false;
 
 function setMapInteraction(enabled) {
     const action = enabled ? 'enable' : 'disable';
-
     if (map.dragging && map.dragging[action]) map.dragging[action]();
     if (map.touchZoom && map.touchZoom[action]) map.touchZoom[action]();
     if (map.doubleClickZoom && map.doubleClickZoom[action]) map.doubleClickZoom[action]();
@@ -314,9 +378,7 @@ function stopInputPropagation(el) {
     ];
 
     events.forEach(type => {
-        el.addEventListener(type, (e) => {
-            e.stopPropagation();
-        });
+        el.addEventListener(type, (e) => e.stopPropagation());
     });
 
     L.DomEvent.disableClickPropagation(el);
@@ -341,43 +403,69 @@ if (searchInput && window.google?.maps?.places) {
     const autocomplete = new google.maps.places.Autocomplete(searchInput, {
         types: ['geocode', 'establishment'],
         componentRestrictions: { country: 'jp' },
-        fields: ['name', 'geometry']
+        fields: ['place_id', 'geometry', 'name']
     });
 
+    const placesService = new google.maps.places.PlacesService(document.createElement('div'));
+
     autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (!place?.geometry?.location) return;
+        const basicPlace = autocomplete.getPlace();
 
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-        const spotName = place.name || searchInput.value;
+        if (!basicPlace.geometry || !basicPlace.geometry.location) return;
 
-        map.setView([lat, lng], 15);
+        const lat = basicPlace.geometry.location.lat();
+        const lng = basicPlace.geometry.location.lng();
 
-        const tempMarker = L.marker([lat, lng]).addTo(map);
-        const popupDiv = document.createElement('div');
+        const openPopupWithPlace = (place) => {
+            const spotName = place.name || basicPlace.name || searchInput.value;
+            const address = place.formatted_address || "";
+            const placeId = place.place_id || basicPlace.place_id || "";
 
-        popupDiv.innerHTML = `
-            <p style="font-weight:bold; margin-bottom:5px;">${spotName}</p>
-            <button id="confirm-add-btn" class="popup-btn">📍 この場所を登録</button>
-        `;
+            map.setView([lat, lng], 15);
 
-        tempMarker.bindPopup(popupDiv).openPopup();
+            const tempMarker = L.marker([lat, lng]).addTo(map);
+            const popupDiv = document.createElement('div');
 
-        popupDiv.querySelector('#confirm-add-btn').addEventListener('click', () => {
-            const newCustomSpot = {
-                title: spotName,
-                lat: lat,
-                lng: lng,
-                estimated: 2000,
-                duration: 1.0
-            };
+            popupDiv.innerHTML = `
+                <p style="font-weight:bold; margin-bottom:5px;">${spotName}</p>
+                ${address ? `<p style="font-size:12px; color:#555; margin-bottom:8px;">${address}</p>` : ''}
+                <button id="confirm-add-btn" class="popup-btn">📍 この場所を登録</button>
+            `;
 
-            customMapSpots.push(newCustomSpot);
-            localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
-            renderMapMarkers();
-            map.removeLayer(tempMarker);
-            searchInput.value = '';
-        });
+            tempMarker.bindPopup(popupDiv).openPopup();
+
+            popupDiv.querySelector('#confirm-add-btn').addEventListener('click', () => {
+                const newCustomSpot = {
+                    id: Date.now().toString(),
+                    title: spotName,
+                    lat: lat,
+                    lng: lng,
+                    estimated: 2000,
+                    duration: 1.0,
+                    address: address,
+                    placeId: placeId,
+                    isCustom: true
+                };
+
+                saveCustomSpot(newCustomSpot);
+                map.removeLayer(tempMarker);
+                searchInput.value = '';
+            });
+        };
+
+        if (basicPlace.place_id) {
+            placesService.getDetails({
+                placeId: basicPlace.place_id,
+                fields: ['name', 'formatted_address', 'place_id', 'geometry']
+            }, (detailPlace, status) => {
+                if (status === google.maps.places.PlacesServiceStatus.OK && detailPlace) {
+                    openPopupWithPlace(detailPlace);
+                } else {
+                    openPopupWithPlace(basicPlace);
+                }
+            });
+        } else {
+            openPopupWithPlace(basicPlace);
+        }
     });
 }
