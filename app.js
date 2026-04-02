@@ -292,9 +292,18 @@ if (syncBtn) {
 // --- 8. Google Places 検索機能 ---
 const searchInput = document.getElementById('pac-input');
 
+// Leafletが検索窓のクリックや入力を奪わないように「伝搬」を停止させる
+// これをしないと、入力のたびに地図が反応してフリーズすることがあります
+L.DomEvent.disableClickPropagation(searchInput);
+L.DomEvent.disableScrollPropagation(searchInput);
+
 if (typeof google !== 'undefined') {
-    const autocomplete = new google.maps.places.Autocomplete(searchInput);
-    
+    // 候補リストが地図コンテナの中に閉じ込められないよう、オプションは最小限に
+    const autocomplete = new google.maps.places.Autocomplete(searchInput, {
+        types: ['geocode', 'establishment'],
+        componentRestrictions: { country: 'jp' } // 日本国内に限定（安定化のため）
+    });
+
     autocomplete.addListener('place_changed', () => {
         const place = autocomplete.getPlace();
         
@@ -304,21 +313,18 @@ if (typeof google !== 'undefined') {
         const lng = place.geometry.location.lng();
         const spotName = place.name;
 
-        // 1. 地図を移動
+        // 地図を移動
         map.setView([lat, lng], 15);
 
-        // 2. フリーズ防止: confirmをやめ、Leafletのポップアップで「登録ボタン」を出す
-        // これにより、ブラウザの処理を止めずにユーザーの入力を待てます
+        // フリーズ対策：以前提案したLeafletポップアップ方式を採用
         const tempMarker = L.marker([lat, lng]).addTo(map);
         const popupDiv = document.createElement('div');
         popupDiv.innerHTML = `
             <p style="font-weight:bold; margin-bottom:5px;">${spotName}</p>
             <button id="confirm-add-btn" class="popup-btn">📍 この場所を登録</button>
         `;
-
         tempMarker.bindPopup(popupDiv).openPopup();
 
-        // ポップアップ内のボタンが押された時の処理
         popupDiv.querySelector('#confirm-add-btn').addEventListener('click', () => {
             const newCustomSpot = {
                 title: spotName,
@@ -329,16 +335,9 @@ if (typeof google !== 'undefined') {
             };
             customMapSpots.push(newCustomSpot);
             localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
-            renderMapMarkers(); // 全マーカー再描画
-            map.removeLayer(tempMarker); // 一時的なマーカーを消去
+            renderMapMarkers();
+            map.removeLayer(tempMarker);
             searchInput.value = ''; 
-        });
-
-        // ポップアップが閉じられたら一時マーカーを消す（キャンセル扱い）
-        tempMarker.on('popupclose', () => {
-            setTimeout(() => {
-                if (map.hasLayer(tempMarker)) map.removeLayer(tempMarker);
-            }, 500);
         });
     });
 }
