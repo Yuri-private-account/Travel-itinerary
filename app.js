@@ -133,6 +133,48 @@ function renderMapMarkers() {
     });
 }
 
+function parseTimeToMinutes(timeStr) {
+    if (!timeStr || !/^\d{2}:\d{2}$/.test(timeStr)) return null;
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+}
+
+function minutesToTimeString(totalMinutes) {
+    let value = ((totalMinutes % 1440) + 1440) % 1440;
+    const h = Math.floor(value / 60);
+    const m = value % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function calculateEndTime(startTime, durationHours) {
+    const startMinutes = parseTimeToMinutes(startTime);
+    if (startMinutes === null) return '--:--';
+    return minutesToTimeString(startMinutes + Math.round(Number(durationHours || 0) * 60));
+}
+
+function sumCostList(list = []) {
+    return list.reduce((sum, item) => sum + Number(item.price || 0), 0);
+}
+
+function calculateSpotTotal(spot) {
+    return Number(spot.entryFee || 0) + sumCostList(spot.items) + sumCostList(spot.foods);
+}
+
+function getDefaultStartTime() {
+    if (!itineraryData.length) return '09:00';
+    const lastSpot = itineraryData[itineraryData.length - 1];
+    const lastEnd = calculateEndTime(lastSpot.startTime || '09:00', lastSpot.duration || 1);
+    return lastEnd === '--:--' ? '09:00' : lastEnd;
+}
+
+function renderTotalSummary() {
+    const totalSummaryEl = document.getElementById('total-summary');
+    if (!totalSummaryEl) return;
+
+    const grandTotal = itineraryData.reduce((sum, spot) => sum + calculateSpotTotal(spot), 0);
+    totalSummaryEl.textContent = `合計金額: ${grandTotal.toLocaleString()} 円`;
+}
+
 // 地図タップでカスタムスポット追加
 map.on('click', function(e) {
     if (typeof isSearching !== 'undefined' && isSearching) return;
@@ -203,49 +245,74 @@ function addSpotToItinerary(spotInfo) {
     const newBlock = {
         id: Date.now().toString(),
         title: spotInfo.title,
-        duration: spotInfo.duration,
-        estimated: spotInfo.estimated,
+        duration: spotInfo.duration || 1.0,
+        estimated: spotInfo.estimated || 0,
         memo: "",
-        color: colors[Math.floor(Math.random() * colors.length)]
+        color: colors[Math.floor(Math.random() * colors.length)],
+        startTime: getDefaultStartTime(),
+        entryFee: 0,
+        items: [],
+        foods: []
     };
 
     if (window.fbDB) {
-        // トランザクション：サーバーの最新配列を取得し、末尾に追加して返す
         window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
             let data = currentData || [];
             data.push(newBlock);
             return data;
+        }).then(() => {
+            openEditSheet(newBlock);
+        }).catch((error) => {
+            console.error(error);
+            alert("しおりの追加に失敗しました。");
         });
     } else {
-        // オフライン時のフォールバック
         itineraryData.push(newBlock);
         saveData();
+        openEditSheet(newBlock);
     }
 }
 
 function renderItinerary() {
     listElement.innerHTML = '';
+
     itineraryData.forEach(spot => {
         const li = document.createElement('li');
         li.className = 'spot-block';
         li.dataset.id = spot.id;
-        li.style.backgroundColor = spot.color || "#ffffff";
-        
-        const blockHeight = Math.max(50, spot.duration * 60); 
-        li.style.height = `${blockHeight}px`;
+
+        const blockHeight = Math.max(70, Number(spot.duration || 1) * 60);
+        const startTime = spot.startTime || '--:--';
+        const endTime = calculateEndTime(startTime, spot.duration);
+        const totalCost = calculateSpotTotal(spot);
 
         li.innerHTML = `
-            <div class="drag-handle">≡</div>
-            <div class="spot-info">
-                <h3>${spot.title}</h3>
-                <p>予定: ${spot.duration}h</p>
+            <div class="time-row">
+                <span class="time-label">${startTime}</span>
+                <span class="time-line"></span>
             </div>
-            <button class="edit-btn">編集</button>
+
+            <div class="spot-main" style="background-color: ${spot.color || "#ffffff"}; height: ${blockHeight}px;">
+                <div class="drag-handle">≡</div>
+                <div class="spot-info">
+                    <h3>${spot.title}</h3>
+                    <p>予定: ${spot.duration}h</p>
+                    <p>費用合計: 約 ${totalCost.toLocaleString()} 円</p>
+                </div>
+                <button class="edit-btn">編集</button>
+            </div>
+
+            <div class="time-row">
+                <span class="time-label">${endTime}</span>
+                <span class="time-line"></span>
+            </div>
         `;
 
         li.querySelector('.edit-btn').addEventListener('click', () => openEditSheet(spot));
         listElement.appendChild(li);
     });
+
+    renderTotalSummary();
 }
 
 // 並び替え
@@ -262,14 +329,125 @@ new Sortable(listElement, {
 
 const bottomSheet = document.getElementById('bottom-sheet');
 const overlay = document.getElementById('overlay');
+const startTimeInput = document.getElementById('edit-start-time');
+const entryFeeInput = document.getElementById('edit-entry-fee');
+const itemsListEl = document.getElementById('items-list');
+const foodsListEl = document.getElementById('foods-list');
+const sheetCostEl = document.getElementById('sheet-cost');
+const sheetCostDetailEl = document.getElementById('sheet-cost-detail');
+
+function addCostRow(container, entry = { name: '', price: '' }, placeholder = '項目名') {
+    const row = document.createElement('div');
+    row.className = 'cost-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'cost-name form-input';
+    nameInput.placeholder = placeholder;
+    nameInput.value = entry.name || '';
+
+    const priceInput = document.createElement('input');
+    priceInput.type = 'number';
+    priceInput.className = 'cost-price form-input';
+    priceInput.placeholder = '0';
+    priceInput.min = '0';
+    priceInput.step = '1';
+    priceInput.value = entry.price ?? '';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'remove-cost-btn';
+    removeBtn.textContent = '削除';
+
+    removeBtn.addEventListener('click', () => {
+        row.remove();
+        updateSheetCostPreview();
+    });
+
+    nameInput.addEventListener('input', updateSheetCostPreview);
+    priceInput.addEventListener('input', updateSheetCostPreview);
+
+    row.appendChild(nameInput);
+    row.appendChild(priceInput);
+    row.appendChild(removeBtn);
+    container.appendChild(row);
+}
+
+function fillCostRows(container, entries, placeholder) {
+    container.innerHTML = '';
+    (entries || []).forEach(entry => addCostRow(container, entry, placeholder));
+}
+
+function collectCostRows(container) {
+    return Array.from(container.querySelectorAll('.cost-row'))
+        .map(row => {
+            const name = row.querySelector('.cost-name').value.trim();
+            const rawPrice = row.querySelector('.cost-price').value;
+            const price = rawPrice === '' ? 0 : Number(rawPrice);
+
+            if (!name && !price) return null;
+
+            return {
+                name: name || '名称未設定',
+                price: Number.isFinite(price) ? price : 0
+            };
+        })
+        .filter(Boolean);
+}
+
+function readEditorData() {
+    return {
+        title: document.getElementById('edit-title').value.trim() || '名称未設定',
+        startTime: startTimeInput.value || '09:00',
+        duration: parseFloat(document.getElementById('edit-duration').value) || 1,
+        entryFee: Number(entryFeeInput.value || 0),
+        items: collectCostRows(itemsListEl),
+        foods: collectCostRows(foodsListEl),
+        memo: document.getElementById('edit-memo').value,
+        color: document.querySelector('.color-circle.selected')?.dataset.color || colors[0]
+    };
+}
+
+function updateSheetCostPreview() {
+    const entryFee = Number(entryFeeInput.value || 0);
+    const items = collectCostRows(itemsListEl);
+    const foods = collectCostRows(foodsListEl);
+
+    const itemsTotal = sumCostList(items);
+    const foodsTotal = sumCostList(foods);
+    const total = entryFee + itemsTotal + foodsTotal;
+
+    sheetCostEl.textContent = `合計: ${total.toLocaleString()} 円`;
+    sheetCostDetailEl.textContent =
+        `入場料 ${entryFee.toLocaleString()} 円 / アイテム ${itemsTotal.toLocaleString()} 円 / 食べ物 ${foodsTotal.toLocaleString()} 円`;
+}
+
+document.getElementById('add-item-btn').addEventListener('click', () => {
+    addCostRow(itemsListEl, { name: '', price: '' }, 'アイテム名');
+});
+
+document.getElementById('add-food-btn').addEventListener('click', () => {
+    addCostRow(foodsListEl, { name: '', price: '' }, '食べ物名');
+});
+
+startTimeInput.addEventListener('input', updateSheetCostPreview);
+entryFeeInput.addEventListener('input', updateSheetCostPreview);
+document.getElementById('edit-duration').addEventListener('input', updateSheetCostPreview);
 
 function openEditSheet(spot) {
     currentEditingId = spot.id;
-    document.getElementById('edit-title').value = spot.title;
-    document.getElementById('edit-duration').value = spot.duration;
-    document.getElementById('sheet-cost').textContent = `概算: 約 ${spot.estimated.toLocaleString()} 円`;
-    document.getElementById('edit-memo').value = spot.memo || "";
+    document.getElementById('edit-title').value = spot.title || '';
+    document.getElementById('edit-start-time').value = spot.startTime || '09:00';
+    document.getElementById('edit-duration').value = spot.duration || 1;
+    document.getElementById('edit-entry-fee').value = spot.entryFee || 0;
+    document.getElementById('edit-memo').value = spot.memo || '';
+
+    fillCostRows(itemsListEl, spot.items || [], 'アイテム名');
+    fillCostRows(foodsListEl, spot.foods || [], '食べ物名');
+
     selectColor(spot.color || colors[0]);
+    updateSheetCostPreview();
+
     bottomSheet.classList.add('show');
     overlay.classList.add('show');
 }
@@ -281,31 +459,46 @@ function closeSheet() {
 }
 
 document.getElementById('save-spot-btn').addEventListener('click', () => {
+    const editorData = readEditorData();
+
     if (window.fbDB) {
         window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
             if (!currentData) return [];
-            // 最新データの中から編集中のIDを探して更新
             const spotIndex = currentData.findIndex(s => s.id === currentEditingId);
             if (spotIndex > -1) {
-                currentData[spotIndex].title = document.getElementById('edit-title').value;
-                currentData[spotIndex].duration = parseFloat(document.getElementById('edit-duration').value);
-                currentData[spotIndex].memo = document.getElementById('edit-memo').value;
-                currentData[spotIndex].color = document.querySelector('.color-circle.selected').dataset.color;
+                currentData[spotIndex] = {
+                    ...currentData[spotIndex],
+                    ...editorData
+                };
             }
-            return currentData; // 更新した配列をサーバーに返す
+            return currentData;
         });
+        closeSheet();
+    } else {
+        const spotIndex = itineraryData.findIndex(s => s.id === currentEditingId);
+        if (spotIndex > -1) {
+            itineraryData[spotIndex] = {
+                ...itineraryData[spotIndex],
+                ...editorData
+            };
+            saveData();
+            renderItinerary();
+        }
         closeSheet();
     }
 });
 
 document.getElementById('delete-spot-btn').addEventListener('click', () => {
-    if(confirm('この予定を削除しますか？')){
+    if (confirm('この予定を削除しますか？')) {
         if (window.fbDB) {
             window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
                 if (!currentData) return [];
-                // 削除対象のID「以外」を残した新しい配列をサーバーに返す
                 return currentData.filter(s => s.id !== currentEditingId);
             });
+        } else {
+            itineraryData = itineraryData.filter(s => s.id !== currentEditingId);
+            saveData();
+            renderItinerary();
         }
         closeSheet();
     }
