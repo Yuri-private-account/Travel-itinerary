@@ -96,7 +96,7 @@ function deleteCustomSpot(spotId) {
 
 function renderMapMarkers() {
     markersLayer.clearLayers();
-    const allSpots = [..., ...customMapSpots];
+    const allSpots = [...predefinedSpots, ...customMapSpots];
 
     allSpots.forEach(spot => {
         const marker = L.marker([spot.lat, spot.lng]);
