@@ -474,7 +474,6 @@ function renderItinerary() {
                 <div class="drag-handle">≡</div>
                 <div class="spot-info">
                     <h3>${spot.title}</h3>
-                    <p>${currentDayLabel}</p>
                     <p>予定: ${spot.duration}h</p>
                     <p>費用合計: 約 ${totalCost.toLocaleString()} 円</p>
                 </div>
