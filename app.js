@@ -49,6 +49,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.jp/{z}/{x}/{y}.png', {
 
 let markersLayer = L.layerGroup().addTo(map);
 
+// --- app.js 76行目付近 ---
+
 function renderMapMarkers() {
     markersLayer.clearLayers();
     const allSpots = [...predefinedSpots, ...customMapSpots];
@@ -57,13 +59,13 @@ function renderMapMarkers() {
         const marker = L.marker([spot.lat, spot.lng]);
         const popupContent = document.createElement('div');
         
-        // 追記: Googleマップを開くためのURL（緯度経度を渡す）
+        // 【修正ポイント】Googleマップの公式検索URLを正しく構築します
         const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
 
         popupContent.innerHTML = `
             <p class="popup-title">${spot.title}</p>
             <button class="popup-btn add-btn">📍 しおりに追加</button>
-            <a href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="popup-btn" style="display:block; text-align:center; text-decoration:none; background:#34a853; margin-top:8px;">🗺️ Googleマップで見る</a>
+            <a href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="popup-btn" style="display:block; text-align:center; text-decoration:none; background:#34a853; margin-top:8px; color:white;">🗺️ Googleマップで見る</a>
         `;
         
         popupContent.querySelector('.add-btn').addEventListener('click', () => {
