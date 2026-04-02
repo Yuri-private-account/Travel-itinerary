@@ -5,14 +5,14 @@ const colors = [
     "#fcd5ce", "#f8edeb", "#f0efeb", "#dcd2c6", "#c5dedd", "#a2d2ff"
 ];
 
-// --- 2. データの読み込み ---
-// しおりのデータ
-let itineraryData = JSON.parse(localStorage.getItem('itinerary')) || [];
-// ユーザーが地図上で追加したカスタムスポットのデータ
+// --- 2. データの初期化 ---
+// しおりのデータはFirebaseから降ってくるのを待つため、初期値は空
+let itineraryData = [];
+// カスタムスポット（地図上のピン）は端末ごとにローカル保存
 let customMapSpots = JSON.parse(localStorage.getItem('customMapSpots')) || [];
 let currentEditingId = null; 
 
-// --- 3. 事前登録スポット（例として大阪周辺） ---
+// --- 3. 事前登録スポット ---
 const predefinedSpots = [
     { title: "海遊館", lat: 34.6441, lng: 135.4323, estimated: 4500, duration: 2.5 },
     { title: "大阪城", lat: 34.6873, lng: 135.5262, estimated: 1500, duration: 1.5 },
@@ -20,11 +20,10 @@ const predefinedSpots = [
     { title: "ユニバーサル・スタジオ・ジャパン", lat: 34.6654, lng: 135.4323, estimated: 12000, duration: 8.0 }
 ];
 
-// --- 4. 初期化処理 ---
+// --- 4. UI初期化 ---
 const listElement = document.getElementById('itinerary-list');
 const colorPicker = document.getElementById('color-picker');
 
-// カラーピッカー生成
 colors.forEach(color => {
     const circle = document.createElement('div');
     circle.className = 'color-circle';
@@ -40,36 +39,31 @@ function selectColor(color) {
 }
 
 // --- 5. Leaflet地図の制御 ---
-// 初期位置を大阪の中心に設定
 const map = L.map('map').setView([34.6687, 135.5013], 12);
+
+// タイルサーバーをOSM日本語版に変更
 L.tileLayer('https://{s}.tile.openstreetmap.jp/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
     maxZoom: 18
 }).addTo(map);
 
-// マーカーをまとめて管理するためのグループ
 let markersLayer = L.layerGroup().addTo(map);
 
 function renderMapMarkers() {
-    markersLayer.clearLayers(); // 一旦すべてのピンを消す
-
-    // 事前登録スポットとカスタムスポットを結合してピンを立てる
+    markersLayer.clearLayers();
     const allSpots = [...predefinedSpots, ...customMapSpots];
 
     allSpots.forEach(spot => {
         const marker = L.marker([spot.lat, spot.lng]);
-        
-        // ポップアップのHTML要素を作成
         const popupContent = document.createElement('div');
         popupContent.innerHTML = `
             <p class="popup-title">${spot.title}</p>
             <button class="popup-btn">📍 しおりに追加</button>
         `;
         
-        // 「しおりに追加」ボタンのイベント
         popupContent.querySelector('.popup-btn').addEventListener('click', () => {
             addSpotToItinerary(spot);
-            map.closePopup(); // ポップアップを閉じる
+            map.closePopup();
         });
 
         marker.bindPopup(popupContent);
@@ -77,42 +71,78 @@ function renderMapMarkers() {
     });
 }
 
-// ★ 地図をタップ（クリック）した時に「新しいスポット」を登録する処理
+// 地図タップでカスタムスポット追加
 map.on('click', function(e) {
     const spotName = prompt("📍 この場所に新しいスポットを登録しますか？\n名前を入力してください:");
-    
     if (spotName && spotName.trim() !== "") {
         const newCustomSpot = {
             title: spotName,
             lat: e.latlng.lat,
             lng: e.latlng.lng,
-            estimated: 2000, // デフォルト概算費用
-            duration: 1.0    // デフォルト滞在時間
+            estimated: 2000,
+            duration: 1.0
         };
-        
         customMapSpots.push(newCustomSpot);
-        localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots)); // 地図に保存
-        renderMapMarkers(); // ピンを再描画
+        localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
+        renderMapMarkers();
     }
 });
 
-// マーカーの初回描画
 renderMapMarkers();
 
-// --- 6. しおりへの追加・描画・編集処理 ---
+// 地図の描画崩れ対策
+setTimeout(() => { map.invalidateSize(); }, 100);
+
+// --- 現在地取得機能 ---
+const locateBtn = document.getElementById('locate-btn');
+let userMarker = null;
+
+if (locateBtn) {
+    locateBtn.addEventListener('click', () => {
+        if (!navigator.geolocation) {
+            alert("お使いのブラウザは位置情報に対応していません。");
+            return;
+        }
+
+        locateBtn.textContent = "⌛ 取得中...";
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                const latlng = [latitude, longitude];
+
+                map.setView(latlng, 15);
+                if (userMarker) map.removeLayer(userMarker);
+
+                userMarker = L.circleMarker(latlng, {
+                    radius: 8, fillColor: "#007bff", color: "#fff",
+                    weight: 2, opacity: 1, fillOpacity: 0.8
+                }).addTo(map).bindPopup("あなたは今ここにいます").openPopup();
+
+                locateBtn.textContent = "📍 現在地を表示";
+            },
+            (error) => {
+                console.error(error);
+                alert("位置情報の取得に失敗しました。");
+                locateBtn.textContent = "📍 現在地を表示";
+            },
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+    });
+}
+
+// --- 6. しおりのデータ操作・UI処理 ---
 
 function addSpotToItinerary(spotInfo) {
     const newBlock = {
-        id: Date.now().toString(), // 一意のIDを振る
+        id: Date.now().toString(),
         title: spotInfo.title,
         duration: spotInfo.duration,
         estimated: spotInfo.estimated,
         memo: "",
-        color: colors[Math.floor(Math.random() * colors.length)] // ランダム色
+        color: colors[Math.floor(Math.random() * colors.length)]
     };
     itineraryData.push(newBlock);
     saveData();
-    renderItinerary();
 }
 
 function renderItinerary() {
@@ -140,7 +170,7 @@ function renderItinerary() {
     });
 }
 
-// 並び替え (SortableJS)
+// 並び替え
 new Sortable(listElement, {
     handle: '.drag-handle',
     animation: 150,
@@ -148,11 +178,10 @@ new Sortable(listElement, {
     onEnd: function (evt) {
         const movedItem = itineraryData.splice(evt.oldIndex, 1)[0];
         itineraryData.splice(evt.newIndex, 0, movedItem);
-        saveData();
+        saveData(); // Firebaseへ自動同期
     }
 });
 
-// ボトムシート制御
 const bottomSheet = document.getElementById('bottom-sheet');
 const overlay = document.getElementById('overlay');
 
@@ -173,7 +202,6 @@ function closeSheet() {
     currentEditingId = null;
 }
 
-// 保存ボタン
 document.getElementById('save-spot-btn').addEventListener('click', () => {
     const spotIndex = itineraryData.findIndex(s => s.id === currentEditingId);
     if (spotIndex > -1) {
@@ -181,18 +209,15 @@ document.getElementById('save-spot-btn').addEventListener('click', () => {
         itineraryData[spotIndex].duration = parseFloat(document.getElementById('edit-duration').value);
         itineraryData[spotIndex].memo = document.getElementById('edit-memo').value;
         itineraryData[spotIndex].color = document.querySelector('.color-circle.selected').dataset.color;
-        saveData();
-        renderItinerary();
+        saveData(); // Firebaseへ自動同期
         closeSheet();
     }
 });
 
-// 削除ボタン
 document.getElementById('delete-spot-btn').addEventListener('click', () => {
     if(confirm('この予定を削除しますか？')){
         itineraryData = itineraryData.filter(s => s.id !== currentEditingId);
-        saveData();
-        renderItinerary();
+        saveData(); // Firebaseへ自動同期
         closeSheet();
     }
 });
@@ -200,73 +225,37 @@ document.getElementById('delete-spot-btn').addEventListener('click', () => {
 document.getElementById('close-sheet').addEventListener('click', closeSheet);
 overlay.addEventListener('click', closeSheet);
 
+// --- 7. Firebase リアルタイム同期処理 ---
+
+// index.htmlの認証が完了した直後に呼ばれる
+window.startDatabaseSync = () => {
+    if (!window.fbDB) return;
+    const itineraryRef = window.fbRef(window.fbDB, 'itinerary');
+    
+    // データが変更されるたびに自動で降ってくる
+    window.fbOnValue(itineraryRef, (snapshot) => {
+        const data = snapshot.val();
+        itineraryData = data ? Object.values(data) : [];
+        renderItinerary(); // 再描画
+    });
+};
+
 function saveData() {
+    // ローカルにもバックアップ
     localStorage.setItem('itinerary', JSON.stringify(itineraryData));
+
+    // Firebaseへ保存（これが他の画面へリアルタイムで反映されるトリガーになります）
+    if (window.fbDB) {
+        const itineraryRef = window.fbRef(window.fbDB, 'itinerary');
+        window.fbSet(itineraryRef, itineraryData);
+    }
 }
 
-// 同期ボタンのモック
-document.getElementById('sync-btn').addEventListener('click', () => {
-    const btn = document.getElementById('sync-btn');
-    btn.textContent = "⏳ 同期中...";
-    btn.style.backgroundColor = "#ff9800";
-    setTimeout(() => {
-        btn.textContent = "✅ 最新の状態";
-        btn.style.backgroundColor = "#4caf50";
-        setTimeout(() => { btn.textContent = "🔄 更新を共有"; }, 3000);
-    }, 1000);
-});
-
-// 初回レンダリング
-renderItinerary();
-
-
-// --- 7. 現在地取得機能 ---
-const locateBtn = document.getElementById('locate-btn');
-let userMarker = null; // 現在地のマーカーを保持
-
-locateBtn.addEventListener('click', () => {
-    // ブラウザが位置情報に対応しているかチェック
-    if (!navigator.geolocation) {
-        alert("お使いのブラウザは位置情報に対応していません。");
-        return;
-    }
-
-    locateBtn.textContent = "⌛ 取得中...";
-
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const { latitude, longitude, accuracy } = position.coords;
-            const latlng = [latitude, longitude];
-
-            // 地図を現在地に移動（ズームレベル15）
-            map.setView(latlng, 15);
-
-            // 既存の現在地マーカーがあれば削除
-            if (userMarker) {
-                map.removeLayer(userMarker);
-            }
-
-            // 現在地を示す青い円のマーカーを作成
-            userMarker = L.circleMarker(latlng, {
-                radius: 8,
-                fillColor: "#007bff",
-                color: "#fff",
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 0.8
-            }).addTo(map).bindPopup("あなたは今ここにいます").openPopup();
-
-            locateBtn.textContent = "📍 現在地を表示";
-        },
-        (error) => {
-            console.error(error);
-            alert("位置情報の取得に失敗しました。設定を確認してください。");
-            locateBtn.textContent = "📍 現在地を表示";
-        },
-        {
-            enableHighAccuracy: true, // 高精度な位置情報を要求
-            timeout: 5000,
-            maximumAge: 0
-        }
-    );
-});
+// 同期ボタンの挙動調整（自動同期化されたのでステータス表示として使う）
+const syncBtn = document.getElementById('sync-btn');
+if (syncBtn) {
+    syncBtn.addEventListener('click', () => {
+        syncBtn.textContent = "✅ 最新の状態です";
+        setTimeout(() => { syncBtn.textContent = "🔄 リアルタイム同期中"; }, 3000);
+    });
+}
