@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>旅行のしおり</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+
+    <div id="map-area">
+        <div id="map"></div>
+        <div class="mock-search">
+            <button id="add-mock-spot">📍 ここに「水族館 (2時間)」を追加</button>
+        </div>
+    </div>
+
+    <div id="itinerary-area">
+        <div class="area-header">
+            <span>旅の予定</span>
+            <button id="sync-btn" class="sync-button">🔄 更新を共有</button>
+        </div>
+        <ul id="itinerary-list">
+            </ul>
+    </div>
+
+    <div id="bottom-sheet" class="hidden">
+        <div class="sheet-handle"></div>
+        <button id="close-sheet">閉じる</button>
+        
+        <div class="sheet-content">
+            <label>スポット名</label>
+            <input type="text" id="edit-title" class="form-input">
+
+            <label>滞在時間（時間）</label>
+            <input type="number" id="edit-duration" class="form-input" step="0.5" min="0.5">
+
+            <label>ブロックの色（18色）</label>
+            <div id="color-picker" class="color-picker">
+                </div>
+
+            <div class="cost-box">
+                <h3>💰 費用の概算とメモ</h3>
+                <p id="sheet-cost" class="price"></p>
+                <textarea id="edit-memo" class="form-textarea" rows="3" placeholder="メモを自由に入力"></textarea>
+            </div>
+
+            <button id="save-spot-btn" class="primary-btn">内容を保存</button>
+            <button id="delete-spot-btn" class="danger-btn">この予定を削除</button>
+        </div>
+    </div>
+    <div id="overlay" class="hidden"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
