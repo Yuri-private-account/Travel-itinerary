@@ -13,6 +13,7 @@ let customMapSpots = JSON.parse(localStorage.getItem('customMapSpots')) || [];
 let currentEditingId = null; 
 
 // --- 3. 事前登録スポット ---
+const predefinedSpots = [];
 //const predefinedSpots = [
 //    { title: "海遊館", lat: 34.6441, lng: 135.4323, estimated: 4500, duration: 2.5 },
 //    { title: "大阪城", lat: 34.6873, lng: 135.5262, estimated: 1500, duration: 1.5 },
