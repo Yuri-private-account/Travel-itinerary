@@ -1,29 +1,31 @@
 // --- 1. カラーパレット ---
 const colors = [
-    "#ffadad", "#ffd6a5", "#fdffb6", "#caffbf", "#9bf6ff", "#a0c4ff", 
+    "#ffadad", "#ffd6a5", "#fdffb6", "#caffbf", "#9bf6ff", "#a0c4ff",
     "#bdb2ff", "#ffc6ff", "#fffffc", "#ffb4a2", "#e5989b", "#b5838d",
     "#fcd5ce", "#f8edeb", "#f0efeb", "#dcd2c6", "#c5dedd", "#a2d2ff"
 ];
 
 // --- 2. データの初期化 ---
-let itineraryData = [];
-
-// カスタムスポットはローカル + Firebase同期の両対応
-let customMapSpots = JSON.parse(localStorage.getItem('customMapSpots')) || [];
-let currentEditingId = null; 
-
-// --- 3. 事前登録スポット ---
+const DEFAULT_DAY = { key: 'day-1', label: '1日目' };
 const predefinedSpots = [];
-//const predefinedSpots = [
-//    { title: "海遊館", lat: 34.6441, lng: 135.4323, estimated: 4500, duration: 2.5 },
-//    { title: "大阪城", lat: 34.6873, lng: 135.5262, estimated: 1500, duration: 1.5 },
-//    { title: "道頓堀 (グリコサイン)", lat: 34.6687, lng: 135.5013, estimated: 3000, duration: 2.0 },
-//    { title: "ユニバーサル・スタジオ・ジャパン", lat: 34.6654, lng: 135.4323, estimated: 12000, duration: 8.0 }
-//];
 
-// --- 4. UI初期化 ---
+let itineraryData = [];
+let dayTabs = JSON.parse(localStorage.getItem('dayTabs')) || [DEFAULT_DAY];
+let activeDayKey = localStorage.getItem('activeDayKey') || dayTabs[0]?.key || DEFAULT_DAY.key;
+let customMapSpots = JSON.parse(localStorage.getItem('customMapSpots')) || [];
+let currentEditingId = null;
+
+let syncedItineraryRaw = null;
+let syncedDaysRaw = null;
+
+// --- 3. UI初期化 ---
 const listElement = document.getElementById('itinerary-list');
 const colorPicker = document.getElementById('color-picker');
+const dayTabsElement = document.getElementById('day-tabs');
+const totalSummaryEl = document.getElementById('total-summary');
+const editDaySelect = document.getElementById('edit-day');
+const addManualBtn = document.getElementById('add-manual-btn');
+const addDayBtn = document.getElementById('add-day-btn');
 
 colors.forEach(color => {
     const circle = document.createElement('div');
@@ -36,19 +38,194 @@ colors.forEach(color => {
 
 function selectColor(color) {
     document.querySelectorAll('.color-circle').forEach(c => c.classList.remove('selected'));
-    document.querySelector(`.color-circle[data-color="${color}"]`).classList.add('selected');
+    const target = document.querySelector(`.color-circle[data-color="${color}"]`);
+    if (target) target.classList.add('selected');
 }
 
-// --- 5. Leaflet地図の制御 ---
+function normalizeDayTabs(rawDays = [], spots = []) {
+    const normalized = [];
+    const usedKeys = new Set();
+
+    (Array.isArray(rawDays) ? rawDays : Object.values(rawDays || {})).forEach((day, index) => {
+        const key = day?.key || `day-${index + 1}`;
+        if (usedKeys.has(key)) return;
+        usedKeys.add(key);
+        normalized.push({
+            key,
+            label: day?.label?.trim() || `${normalized.length + 1}日目`
+        });
+    });
+
+    if (!normalized.length) {
+        normalized.push({ ...DEFAULT_DAY });
+        usedKeys.add(DEFAULT_DAY.key);
+    }
+
+    (Array.isArray(spots) ? spots : []).forEach(spot => {
+        const dayKey = spot?.dayKey;
+        if (!dayKey || usedKeys.has(dayKey)) return;
+        usedKeys.add(dayKey);
+        normalized.push({ key: dayKey, label: `${normalized.length + 1}日目` });
+    });
+
+    return normalized;
+}
+
+function normalizeItinerary(rawItinerary = [], normalizedDays = dayTabs) {
+    const safeDays = normalizedDays.length ? normalizedDays : [{ ...DEFAULT_DAY }];
+    const fallbackDayKey = safeDays[0].key;
+    const validDayKeys = new Set(safeDays.map(day => day.key));
+
+    return (Array.isArray(rawItinerary) ? rawItinerary : Object.values(rawItinerary || {})).map((spot, index) => ({
+        id: spot?.id || `${Date.now()}-${index}`,
+        title: spot?.title || '名称未設定',
+        duration: Number(spot?.duration || 1),
+        estimated: Number(spot?.estimated || 0),
+        memo: spot?.memo || '',
+        color: spot?.color || colors[index % colors.length],
+        startTime: spot?.startTime || '09:00',
+        entryFee: Number(spot?.entryFee || 0),
+        items: Array.isArray(spot?.items) ? spot.items : [],
+        foods: Array.isArray(spot?.foods) ? spot.foods : [],
+        dayKey: validDayKeys.has(spot?.dayKey) ? spot.dayKey : fallbackDayKey
+    }));
+}
+
+function setDayState(days, spots) {
+    dayTabs = normalizeDayTabs(days, spots);
+    itineraryData = normalizeItinerary(spots, dayTabs);
+
+    if (!dayTabs.some(day => day.key === activeDayKey)) {
+        activeDayKey = dayTabs[0].key;
+    }
+
+    persistDayLocalState();
+    renderDayTabs();
+    renderItinerary();
+}
+
+function getSpotsForDay(dayKey = activeDayKey) {
+    return itineraryData.filter(spot => spot.dayKey === dayKey);
+}
+
+function getDefaultStartTime(dayKey = activeDayKey) {
+    const daySpots = getSpotsForDay(dayKey);
+    if (!daySpots.length) return '09:00';
+
+    const lastSpot = daySpots[daySpots.length - 1];
+    const lastEnd = calculateEndTime(lastSpot.startTime || '09:00', lastSpot.duration || 1);
+    return lastEnd === '--:--' ? '09:00' : lastEnd;
+}
+
+function renderDayTabs() {
+    if (!dayTabsElement) return;
+
+    dayTabsElement.innerHTML = '';
+
+    dayTabs.forEach(day => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `day-tab${day.key === activeDayKey ? ' active' : ''}`;
+        btn.textContent = day.label;
+        btn.addEventListener('click', () => {
+            activeDayKey = day.key;
+            persistDayLocalState();
+            renderDayTabs();
+            renderItinerary();
+        });
+        dayTabsElement.appendChild(btn);
+    });
+
+    populateDaySelect();
+}
+
+function populateDaySelect() {
+    if (!editDaySelect) return;
+
+    editDaySelect.innerHTML = '';
+    dayTabs.forEach(day => {
+        const option = document.createElement('option');
+        option.value = day.key;
+        option.textContent = day.label;
+        editDaySelect.appendChild(option);
+    });
+}
+
+function persistDayLocalState() {
+    localStorage.setItem('dayTabs', JSON.stringify(dayTabs));
+    localStorage.setItem('activeDayKey', activeDayKey);
+}
+
+function addNewDay() {
+    const nextNumber = dayTabs.length + 1;
+    const input = prompt('追加する日の名前を入力してください。', `${nextNumber}日目`);
+    if (input === null) return;
+
+    const label = input.trim() || `${nextNumber}日目`;
+    const newDay = {
+        key: `day-${Date.now()}`,
+        label
+    };
+
+    dayTabs = [...dayTabs, newDay];
+    activeDayKey = newDay.key;
+    saveDays();
+    renderDayTabs();
+    renderItinerary();
+}
+
+if (addDayBtn) {
+    addDayBtn.addEventListener('click', addNewDay);
+}
+
+if (addManualBtn) {
+    addManualBtn.addEventListener('click', () => addManualBlock());
+}
+
+function parseTimeToMinutes(timeStr) {
+    if (!timeStr || !/^\d{2}:\d{2}$/.test(timeStr)) return null;
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+}
+
+function minutesToTimeString(totalMinutes) {
+    const value = ((totalMinutes % 1440) + 1440) % 1440;
+    const h = Math.floor(value / 60);
+    const m = value % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function calculateEndTime(startTime, durationHours) {
+    const startMinutes = parseTimeToMinutes(startTime);
+    if (startMinutes === null) return '--:--';
+    return minutesToTimeString(startMinutes + Math.round(Number(durationHours || 0) * 60));
+}
+
+function sumCostList(list = []) {
+    return list.reduce((sum, item) => sum + Number(item.price || 0), 0);
+}
+
+function calculateSpotTotal(spot) {
+    return Number(spot.entryFee || 0) + sumCostList(spot.items) + sumCostList(spot.foods);
+}
+
+function renderTotalSummary() {
+    if (!totalSummaryEl) return;
+
+    const currentDayTotal = getSpotsForDay(activeDayKey).reduce((sum, spot) => sum + calculateSpotTotal(spot), 0);
+    const grandTotal = itineraryData.reduce((sum, spot) => sum + calculateSpotTotal(spot), 0);
+    totalSummaryEl.textContent = `この日の合計金額: ${currentDayTotal.toLocaleString()} 円 / 旅行全体: ${grandTotal.toLocaleString()} 円`;
+}
+
+// --- 4. Leaflet地図の制御 ---
 const map = L.map('map').setView([34.6687, 135.5013], 12);
 
-// タイルサーバーをOSM日本語版に変更
-L.tileLayer('https://{s}.tile.openstreetmap.jp/{z}/{x}/{y}.png', {
+L.tileLayer('https://tile.openstreetmap.jp/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
     maxZoom: 18
 }).addTo(map);
 
-let markersLayer = L.layerGroup().addTo(map);
+const markersLayer = L.layerGroup().addTo(map);
 
 function buildGoogleMapsUrl(spot) {
     const queryText =
@@ -74,7 +251,6 @@ function saveCustomSpot(spot) {
     spot.isCustom = true;
 
     if (window.fbDB) {
-        // mapSpots/{id} に保存
         const spotRef = window.fbRef(window.fbDB, `mapSpots/${spot.id}`);
         window.fbSet(spotRef, spot);
     } else {
@@ -134,49 +310,6 @@ function renderMapMarkers() {
     });
 }
 
-function parseTimeToMinutes(timeStr) {
-    if (!timeStr || !/^\d{2}:\d{2}$/.test(timeStr)) return null;
-    const [h, m] = timeStr.split(':').map(Number);
-    return h * 60 + m;
-}
-
-function minutesToTimeString(totalMinutes) {
-    let value = ((totalMinutes % 1440) + 1440) % 1440;
-    const h = Math.floor(value / 60);
-    const m = value % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-function calculateEndTime(startTime, durationHours) {
-    const startMinutes = parseTimeToMinutes(startTime);
-    if (startMinutes === null) return '--:--';
-    return minutesToTimeString(startMinutes + Math.round(Number(durationHours || 0) * 60));
-}
-
-function sumCostList(list = []) {
-    return list.reduce((sum, item) => sum + Number(item.price || 0), 0);
-}
-
-function calculateSpotTotal(spot) {
-    return Number(spot.entryFee || 0) + sumCostList(spot.items) + sumCostList(spot.foods);
-}
-
-function getDefaultStartTime() {
-    if (!itineraryData.length) return '09:00';
-    const lastSpot = itineraryData[itineraryData.length - 1];
-    const lastEnd = calculateEndTime(lastSpot.startTime || '09:00', lastSpot.duration || 1);
-    return lastEnd === '--:--' ? '09:00' : lastEnd;
-}
-
-function renderTotalSummary() {
-    const totalSummaryEl = document.getElementById('total-summary');
-    if (!totalSummaryEl) return;
-
-    const grandTotal = itineraryData.reduce((sum, spot) => sum + calculateSpotTotal(spot), 0);
-    totalSummaryEl.textContent = `合計金額: ${grandTotal.toLocaleString()} 円`;
-}
-
-// 地図タップでカスタムスポット追加
 map.on('click', function(e) {
     if (typeof isSearching !== 'undefined' && isSearching) return;
 
@@ -199,11 +332,9 @@ map.on('click', function(e) {
 });
 
 renderMapMarkers();
-
-// 地図の描画崩れ対策
 setTimeout(() => { map.invalidateSize(); }, 100);
 
-// --- 現在地取得機能 ---
+// --- 5. 現在地取得機能 ---
 const locateBtn = document.getElementById('locate-btn');
 let userMarker = null;
 
@@ -224,8 +355,12 @@ if (locateBtn) {
                 if (userMarker) map.removeLayer(userMarker);
 
                 userMarker = L.circleMarker(latlng, {
-                    radius: 8, fillColor: "#007bff", color: "#fff",
-                    weight: 2, opacity: 1, fillOpacity: 0.8
+                    radius: 8,
+                    fillColor: "#007bff",
+                    color: "#fff",
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.8
                 }).addTo(map).bindPopup("あなたは今ここにいます").openPopup();
 
                 locateBtn.textContent = "📍 現在地を表示";
@@ -241,24 +376,33 @@ if (locateBtn) {
 }
 
 // --- 6. しおりのデータ操作・UI処理 ---
-
-function addSpotToItinerary(spotInfo) {
-    const newBlock = {
+function createBaseBlock(partial = {}) {
+    const targetDayKey = partial.dayKey || activeDayKey;
+    return {
         id: Date.now().toString(),
-        title: spotInfo.title,
-        duration: spotInfo.duration || 1.0,
-        estimated: spotInfo.estimated || 0,
-        memo: "",
-        color: colors[Math.floor(Math.random() * colors.length)],
-        startTime: getDefaultStartTime(),
-        entryFee: 0,
-        items: [],
-        foods: []
+        title: partial.title || '新しい予定',
+        duration: Number(partial.duration || 1.0),
+        estimated: Number(partial.estimated || 0),
+        memo: partial.memo || '',
+        color: partial.color || colors[Math.floor(Math.random() * colors.length)],
+        startTime: partial.startTime || getDefaultStartTime(targetDayKey),
+        entryFee: Number(partial.entryFee || 0),
+        items: Array.isArray(partial.items) ? partial.items : [],
+        foods: Array.isArray(partial.foods) ? partial.foods : [],
+        dayKey: targetDayKey
     };
+}
+
+function addSpotToItinerary(spotInfo = {}) {
+    const newBlock = createBaseBlock({
+        title: spotInfo.title,
+        duration: spotInfo.duration,
+        estimated: spotInfo.estimated
+    });
 
     if (window.fbDB) {
         window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
-            let data = currentData || [];
+            const data = Array.isArray(currentData) ? currentData : Object.values(currentData || {});
             data.push(newBlock);
             return data;
         }).then(() => {
@@ -274,10 +418,42 @@ function addSpotToItinerary(spotInfo) {
     }
 }
 
+function addManualBlock() {
+    const newBlock = createBaseBlock({ title: '新しい予定' });
+
+    if (window.fbDB) {
+        window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
+            const data = Array.isArray(currentData) ? currentData : Object.values(currentData || {});
+            data.push(newBlock);
+            return data;
+        }).then(() => {
+            openEditSheet(newBlock);
+        }).catch((error) => {
+            console.error(error);
+            alert("手動の予定追加に失敗しました。");
+        });
+    } else {
+        itineraryData.push(newBlock);
+        saveData();
+        openEditSheet(newBlock);
+    }
+}
+
 function renderItinerary() {
     listElement.innerHTML = '';
 
-    itineraryData.forEach(spot => {
+    const currentSpots = getSpotsForDay(activeDayKey);
+
+    if (!currentSpots.length) {
+        const emptyEl = document.createElement('li');
+        emptyEl.className = 'empty-state';
+        emptyEl.innerHTML = 'この日はまだ予定がありません。<br>「＋ ブロック追加」または地図のスポット追加から登録できます。';
+        listElement.appendChild(emptyEl);
+        renderTotalSummary();
+        return;
+    }
+
+    currentSpots.forEach(spot => {
         const li = document.createElement('li');
         li.className = 'spot-block';
         li.dataset.id = spot.id;
@@ -286,6 +462,7 @@ function renderItinerary() {
         const startTime = spot.startTime || '--:--';
         const endTime = calculateEndTime(startTime, spot.duration);
         const totalCost = calculateSpotTotal(spot);
+        const currentDayLabel = dayTabs.find(day => day.key === spot.dayKey)?.label || '';
 
         li.innerHTML = `
             <div class="time-row">
@@ -297,6 +474,7 @@ function renderItinerary() {
                 <div class="drag-handle">≡</div>
                 <div class="spot-info">
                     <h3>${spot.title}</h3>
+                    <p>${currentDayLabel}</p>
                     <p>予定: ${spot.duration}h</p>
                     <p>費用合計: 約 ${totalCost.toLocaleString()} 円</p>
                 </div>
@@ -316,15 +494,25 @@ function renderItinerary() {
     renderTotalSummary();
 }
 
-// 並び替え
 new Sortable(listElement, {
     handle: '.drag-handle',
     animation: 150,
     ghostClass: 'sortable-ghost',
     onEnd: function (evt) {
-        const movedItem = itineraryData.splice(evt.oldIndex, 1)[0];
-        itineraryData.splice(evt.newIndex, 0, movedItem);
-        saveData(); // Firebaseへ自動同期
+        const currentSpots = getSpotsForDay(activeDayKey);
+        if (!currentSpots.length) return;
+
+        const reordered = [...currentSpots];
+        const movedItem = reordered.splice(evt.oldIndex, 1)[0];
+        reordered.splice(evt.newIndex, 0, movedItem);
+
+        let activePointer = 0;
+        itineraryData = itineraryData.map(spot => {
+            if (spot.dayKey !== activeDayKey) return spot;
+            return reordered[activePointer++];
+        });
+
+        saveData();
     }
 });
 
@@ -399,6 +587,7 @@ function collectCostRows(container) {
 function readEditorData() {
     return {
         title: document.getElementById('edit-title').value.trim() || '名称未設定',
+        dayKey: editDaySelect.value || activeDayKey,
         startTime: startTimeInput.value || '09:00',
         duration: parseFloat(document.getElementById('edit-duration').value) || 1,
         entryFee: Number(entryFeeInput.value || 0),
@@ -437,7 +626,10 @@ document.getElementById('edit-duration').addEventListener('input', updateSheetCo
 
 function openEditSheet(spot) {
     currentEditingId = spot.id;
+    populateDaySelect();
+
     document.getElementById('edit-title').value = spot.title || '';
+    editDaySelect.value = spot.dayKey || activeDayKey;
     document.getElementById('edit-start-time').value = spot.startTime || '09:00';
     document.getElementById('edit-duration').value = spot.duration || 1;
     document.getElementById('edit-entry-fee').value = spot.entryFee || 0;
@@ -461,20 +653,24 @@ function closeSheet() {
 
 document.getElementById('save-spot-btn').addEventListener('click', () => {
     const editorData = readEditorData();
+    activeDayKey = editorData.dayKey;
 
     if (window.fbDB) {
         window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
-            if (!currentData) return [];
-            const spotIndex = currentData.findIndex(s => s.id === currentEditingId);
+            const safeData = Array.isArray(currentData) ? currentData : Object.values(currentData || {});
+            const spotIndex = safeData.findIndex(s => s.id === currentEditingId);
             if (spotIndex > -1) {
-                currentData[spotIndex] = {
-                    ...currentData[spotIndex],
+                safeData[spotIndex] = {
+                    ...safeData[spotIndex],
                     ...editorData
                 };
             }
-            return currentData;
+            return safeData;
+        }).then(() => {
+            persistDayLocalState();
+            renderDayTabs();
+            closeSheet();
         });
-        closeSheet();
     } else {
         const spotIndex = itineraryData.findIndex(s => s.id === currentEditingId);
         if (spotIndex > -1) {
@@ -483,6 +679,7 @@ document.getElementById('save-spot-btn').addEventListener('click', () => {
                 ...editorData
             };
             saveData();
+            renderDayTabs();
             renderItinerary();
         }
         closeSheet();
@@ -493,8 +690,8 @@ document.getElementById('delete-spot-btn').addEventListener('click', () => {
     if (confirm('この予定を削除しますか？')) {
         if (window.fbDB) {
             window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
-                if (!currentData) return [];
-                return currentData.filter(s => s.id !== currentEditingId);
+                const safeData = Array.isArray(currentData) ? currentData : Object.values(currentData || {});
+                return safeData.filter(s => s.id !== currentEditingId);
             });
         } else {
             itineraryData = itineraryData.filter(s => s.id !== currentEditingId);
@@ -509,16 +706,19 @@ document.getElementById('close-sheet').addEventListener('click', closeSheet);
 overlay.addEventListener('click', closeSheet);
 
 // --- 7. Firebase リアルタイム同期処理 ---
-
-// index.htmlの認証が完了した直後に呼ばれる
 window.startDatabaseSync = () => {
     if (!window.fbDB) return;
 
     const itineraryRef = window.fbRef(window.fbDB, 'itinerary');
     window.fbOnValue(itineraryRef, (snapshot) => {
-        const data = snapshot.val();
-        itineraryData = data ? Object.values(data) : [];
-        renderItinerary();
+        syncedItineraryRaw = snapshot.val();
+        setDayState(syncedDaysRaw, syncedItineraryRaw);
+    });
+
+    const daysRef = window.fbRef(window.fbDB, 'days');
+    window.fbOnValue(daysRef, (snapshot) => {
+        syncedDaysRaw = snapshot.val();
+        setDayState(syncedDaysRaw, syncedItineraryRaw);
     });
 
     const mapSpotsRef = window.fbRef(window.fbDB, 'mapSpots');
@@ -530,23 +730,30 @@ window.startDatabaseSync = () => {
     });
 };
 
-function saveData() {
-    // ローカルにもバックアップ
-    localStorage.setItem('itinerary', JSON.stringify(itineraryData));
+function saveDays() {
+    persistDayLocalState();
 
-    // Firebaseへ保存（これが他の画面へリアルタイムで反映されるトリガーになります）
+    if (window.fbDB) {
+        const daysRef = window.fbRef(window.fbDB, 'days');
+        window.fbSet(daysRef, dayTabs);
+    }
+}
+
+function saveData() {
+    localStorage.setItem('itinerary', JSON.stringify(itineraryData));
+    persistDayLocalState();
+
     if (window.fbDB) {
         const itineraryRef = window.fbRef(window.fbDB, 'itinerary');
         window.fbSet(itineraryRef, itineraryData);
     }
 }
 
-// 同期ボタンの挙動調整（自動同期化されたのでステータス表示として使う）
 const syncBtn = document.getElementById('sync-btn');
 if (syncBtn) {
     syncBtn.addEventListener('click', () => {
-        syncBtn.textContent = "✅ 最新の状態です";
-        setTimeout(() => { syncBtn.textContent = "🔄 リアルタイム同期中"; }, 3000);
+        syncBtn.textContent = '✅ 最新の状態です';
+        setTimeout(() => { syncBtn.textContent = '🔄 リアルタイム同期中'; }, 3000);
     });
 }
 
@@ -612,8 +819,8 @@ if (searchInput && window.google?.maps?.places) {
 
         const openPopupWithPlace = (place) => {
             const spotName = place.name || basicPlace.name || searchInput.value;
-            const address = place.formatted_address || "";
-            const placeId = place.place_id || basicPlace.place_id || "";
+            const address = place.formatted_address || '';
+            const placeId = place.place_id || basicPlace.place_id || '';
 
             map.setView([lat, lng], 15);
 
@@ -632,12 +839,12 @@ if (searchInput && window.google?.maps?.places) {
                 const newCustomSpot = {
                     id: Date.now().toString(),
                     title: spotName,
-                    lat: lat,
-                    lng: lng,
+                    lat,
+                    lng,
                     estimated: 2000,
                     duration: 1.0,
-                    address: address,
-                    placeId: placeId,
+                    address,
+                    placeId,
                     isCustom: true
                 };
 
@@ -663,3 +870,7 @@ if (searchInput && window.google?.maps?.places) {
         }
     });
 }
+
+// --- 9. ローカル初期表示 ---
+const localItinerary = JSON.parse(localStorage.getItem('itinerary')) || [];
+setDayState(dayTabs, localItinerary);
