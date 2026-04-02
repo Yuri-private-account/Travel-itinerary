@@ -13,12 +13,12 @@ let customMapSpots = JSON.parse(localStorage.getItem('customMapSpots')) || [];
 let currentEditingId = null; 
 
 // --- 3. 事前登録スポット ---
-const predefinedSpots = [
-    { title: "海遊館", lat: 34.6441, lng: 135.4323, estimated: 4500, duration: 2.5 },
-    { title: "大阪城", lat: 34.6873, lng: 135.5262, estimated: 1500, duration: 1.5 },
-    { title: "道頓堀 (グリコサイン)", lat: 34.6687, lng: 135.5013, estimated: 3000, duration: 2.0 },
-    { title: "ユニバーサル・スタジオ・ジャパン", lat: 34.6654, lng: 135.4323, estimated: 12000, duration: 8.0 }
-];
+//const predefinedSpots = [
+//    { title: "海遊館", lat: 34.6441, lng: 135.4323, estimated: 4500, duration: 2.5 },
+//    { title: "大阪城", lat: 34.6873, lng: 135.5262, estimated: 1500, duration: 1.5 },
+//    { title: "道頓堀 (グリコサイン)", lat: 34.6687, lng: 135.5013, estimated: 3000, duration: 2.0 },
+//    { title: "ユニバーサル・スタジオ・ジャパン", lat: 34.6654, lng: 135.4323, estimated: 12000, duration: 8.0 }
+//];
 
 // --- 4. UI初期化 ---
 const listElement = document.getElementById('itinerary-list');
@@ -96,7 +96,7 @@ function deleteCustomSpot(spotId) {
 
 function renderMapMarkers() {
     markersLayer.clearLayers();
-    const allSpots = [...predefinedSpots, ...customMapSpots];
+    const allSpots = [..., ...customMapSpots];
 
     allSpots.forEach(spot => {
         const marker = L.marker([spot.lat, spot.lng]);
