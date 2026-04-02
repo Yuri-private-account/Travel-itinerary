@@ -291,38 +291,75 @@ if (syncBtn) {
 
 // --- 8. Google Places 検索機能 ---
 const searchInput = document.getElementById('pac-input');
+let isSearching = false;
 
-// Leafletが検索窓のクリックや入力を奪わないように「伝搬」を停止させる
-// これをしないと、入力のたびに地図が反応してフリーズすることがあります
-L.DomEvent.disableClickPropagation(searchInput);
-L.DomEvent.disableScrollPropagation(searchInput);
+function setMapInteraction(enabled) {
+    const action = enabled ? 'enable' : 'disable';
 
-if (typeof google !== 'undefined') {
-    // 候補リストが地図コンテナの中に閉じ込められないよう、オプションは最小限に
+    if (map.dragging && map.dragging[action]) map.dragging[action]();
+    if (map.touchZoom && map.touchZoom[action]) map.touchZoom[action]();
+    if (map.doubleClickZoom && map.doubleClickZoom[action]) map.doubleClickZoom[action]();
+    if (map.scrollWheelZoom && map.scrollWheelZoom[action]) map.scrollWheelZoom[action]();
+    if (map.boxZoom && map.boxZoom[action]) map.boxZoom[action]();
+    if (map.keyboard && map.keyboard[action]) map.keyboard[action]();
+}
+
+function stopInputPropagation(el) {
+    const events = [
+        'click', 'dblclick', 'mousedown', 'mouseup',
+        'touchstart', 'touchend', 'pointerdown', 'pointerup',
+        'keydown', 'keyup', 'keypress'
+    ];
+
+    events.forEach(type => {
+        el.addEventListener(type, (e) => {
+            e.stopPropagation();
+        });
+    });
+
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+}
+
+if (searchInput && window.google?.maps?.places) {
+    stopInputPropagation(searchInput);
+
+    searchInput.addEventListener('focus', () => {
+        isSearching = true;
+        setMapInteraction(false);
+    });
+
+    searchInput.addEventListener('blur', () => {
+        setTimeout(() => {
+            isSearching = false;
+            setMapInteraction(true);
+        }, 150);
+    });
+
     const autocomplete = new google.maps.places.Autocomplete(searchInput, {
         types: ['geocode', 'establishment'],
-        componentRestrictions: { country: 'jp' } // 日本国内に限定（安定化のため）
+        componentRestrictions: { country: 'jp' },
+        fields: ['name', 'geometry']
     });
 
     autocomplete.addListener('place_changed', () => {
         const place = autocomplete.getPlace();
-        
-        if (!place.geometry || !place.geometry.location) return;
+        if (!place?.geometry?.location) return;
 
         const lat = place.geometry.location.lat();
         const lng = place.geometry.location.lng();
-        const spotName = place.name;
+        const spotName = place.name || searchInput.value;
 
-        // 地図を移動
         map.setView([lat, lng], 15);
 
-        // フリーズ対策：以前提案したLeafletポップアップ方式を採用
         const tempMarker = L.marker([lat, lng]).addTo(map);
         const popupDiv = document.createElement('div');
+
         popupDiv.innerHTML = `
             <p style="font-weight:bold; margin-bottom:5px;">${spotName}</p>
             <button id="confirm-add-btn" class="popup-btn">📍 この場所を登録</button>
         `;
+
         tempMarker.bindPopup(popupDiv).openPopup();
 
         popupDiv.querySelector('#confirm-add-btn').addEventListener('click', () => {
@@ -333,11 +370,12 @@ if (typeof google !== 'undefined') {
                 estimated: 2000,
                 duration: 1.0
             };
+
             customMapSpots.push(newCustomSpot);
             localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
             renderMapMarkers();
             map.removeLayer(tempMarker);
-            searchInput.value = ''; 
+            searchInput.value = '';
         });
     });
 }
