@@ -59,10 +59,8 @@ function renderMapMarkers() {
         const marker = L.marker([spot.lat, spot.lng]);
         const popupContent = document.createElement('div');
         
-
-// 修正前: `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
-// 修正後: 公式の検索URL形式にします
-const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
+        // 正しいGoogleマップ検索URLの形式
+        const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
 
         popupContent.innerHTML = `
             <p class="popup-title">${spot.title}</p>
@@ -294,41 +292,53 @@ if (syncBtn) {
 // --- 8. Google Places 検索機能 ---
 const searchInput = document.getElementById('pac-input');
 
-// Google Maps APIが正しく読み込まれているか確認
 if (typeof google !== 'undefined') {
     const autocomplete = new google.maps.places.Autocomplete(searchInput);
     
-    // 場所が選択されたときの処理
-    // --- app.js 修正版 ---
     autocomplete.addListener('place_changed', () => {
         const place = autocomplete.getPlace();
         
-        if (!place.geometry || !place.geometry.location) {
-            return; // 候補から選ばれなかった場合は何もしない
-        }
-    
+        if (!place.geometry || !place.geometry.location) return;
+
         const lat = place.geometry.location.lat();
         const lng = place.geometry.location.lng();
         const spotName = place.name;
-    
-        // 地図を移動
+
+        // 1. 地図を移動
         map.setView([lat, lng], 15);
-    
-        // 【重要】フリーズ対策：100ミリ秒だけ処理を遅らせてUIの競合を防ぐ
-        setTimeout(() => {
-            if (confirm(`「${spotName}」を地図に登録しますか？`)) {
-                const newCustomSpot = {
-                    title: spotName,
-                    lat: lat,
-                    lng: lng,
-                    estimated: 2000,
-                    duration: 1.0
-                };
-                customMapSpots.push(newCustomSpot);
-                localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
-                renderMapMarkers();
-                searchInput.value = ''; 
-            }
-        }, 100);
+
+        // 2. フリーズ防止: confirmをやめ、Leafletのポップアップで「登録ボタン」を出す
+        // これにより、ブラウザの処理を止めずにユーザーの入力を待てます
+        const tempMarker = L.marker([lat, lng]).addTo(map);
+        const popupDiv = document.createElement('div');
+        popupDiv.innerHTML = `
+            <p style="font-weight:bold; margin-bottom:5px;">${spotName}</p>
+            <button id="confirm-add-btn" class="popup-btn">📍 この場所を登録</button>
+        `;
+
+        tempMarker.bindPopup(popupDiv).openPopup();
+
+        // ポップアップ内のボタンが押された時の処理
+        popupDiv.querySelector('#confirm-add-btn').addEventListener('click', () => {
+            const newCustomSpot = {
+                title: spotName,
+                lat: lat,
+                lng: lng,
+                estimated: 2000,
+                duration: 1.0
+            };
+            customMapSpots.push(newCustomSpot);
+            localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
+            renderMapMarkers(); // 全マーカー再描画
+            map.removeLayer(tempMarker); // 一時的なマーカーを消去
+            searchInput.value = ''; 
+        });
+
+        // ポップアップが閉じられたら一時マーカーを消す（キャンセル扱い）
+        tempMarker.on('popupclose', () => {
+            setTimeout(() => {
+                if (map.hasLayer(tempMarker)) map.removeLayer(tempMarker);
+            }, 500);
+        });
     });
 }
