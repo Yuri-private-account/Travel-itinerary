@@ -473,9 +473,12 @@ function renderItinerary() {
             <div class="spot-main" style="background-color: ${spot.color || "#ffffff"}; height: ${blockHeight}px;">
                 <div class="drag-handle">≡</div>
                 <div class="spot-info">
-                    <h3>${spot.title}</h3>
-                    <p>予定: ${spot.duration}h</p>
-                    <p>費用合計: 約 ${totalCost.toLocaleString()} 円</p>
+                    <h3 title="${spot.title}">${spot.title}</h3>
+                    <div class="spot-meta">
+                        <p>${currentDayLabel}</p>
+                        <p>予定: ${spot.duration}h</p>
+                        <p>費用合計: 約 ${totalCost.toLocaleString()} 円</p>
+                    </div>
                 </div>
                 <button class="edit-btn">編集</button>
             </div>
