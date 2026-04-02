@@ -59,8 +59,10 @@ function renderMapMarkers() {
         const marker = L.marker([spot.lat, spot.lng]);
         const popupContent = document.createElement('div');
         
-        // 【修正ポイント】Googleマップの公式検索URLを正しく構築します
-        const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
+
+// 修正前: `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
+// 修正後: 公式の検索URL形式にします
+const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${spot.lat},${spot.lng}`;
 
         popupContent.innerHTML = `
             <p class="popup-title">${spot.title}</p>
@@ -297,37 +299,36 @@ if (typeof google !== 'undefined') {
     const autocomplete = new google.maps.places.Autocomplete(searchInput);
     
     // 場所が選択されたときの処理
+    // --- app.js 修正版 ---
     autocomplete.addListener('place_changed', () => {
         const place = autocomplete.getPlace();
         
-        // 候補から選ばれなかった場合（エンターキーを押しただけ等）
         if (!place.geometry || !place.geometry.location) {
-            alert("検索候補から場所を選択してください。");
-            return;
+            return; // 候補から選ばれなかった場合は何もしない
         }
-
+    
         const lat = place.geometry.location.lat();
         const lng = place.geometry.location.lng();
-        const spotName = place.name; // Googleが持つ正式名称
-
-        // 地図をその場所に移動させる
+        const spotName = place.name;
+    
+        // 地図を移動
         map.setView([lat, lng], 15);
-
-        // 自動的にカスタムスポットとして地図に登録
-        if (confirm(`「${spotName}」を地図に登録しますか？`)) {
-            const newCustomSpot = {
-                title: spotName,
-                lat: lat,
-                lng: lng,
-                estimated: 2000,
-                duration: 1.0
-            };
-            customMapSpots.push(newCustomSpot);
-            localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
-            renderMapMarkers();
-            
-            // 検索窓を空にする
-            searchInput.value = ''; 
-        }
+    
+        // 【重要】フリーズ対策：100ミリ秒だけ処理を遅らせてUIの競合を防ぐ
+        setTimeout(() => {
+            if (confirm(`「${spotName}」を地図に登録しますか？`)) {
+                const newCustomSpot = {
+                    title: spotName,
+                    lat: lat,
+                    lng: lng,
+                    estimated: 2000,
+                    duration: 1.0
+                };
+                customMapSpots.push(newCustomSpot);
+                localStorage.setItem('customMapSpots', JSON.stringify(customMapSpots));
+                renderMapMarkers();
+                searchInput.value = ''; 
+            }
+        }, 100);
     });
 }
