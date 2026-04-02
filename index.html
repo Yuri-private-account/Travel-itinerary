@@ -31,23 +31,53 @@
             <button id="sync-btn" class="sync-button">🔄 リアルタイム同期中</button>
         </div>
         <ul id="itinerary-list"></ul>
+        <div id="total-summary" class="total-summary">合計金額: 0 円</div>
     </div>
 
     <div id="bottom-sheet" class="hidden">
-        <div class="sheet-handle"></div>
-        <button id="close-sheet">閉じる</button>
+            <div class="sheet-handle"></div>
+            <button id="close-sheet">閉じる</button>
         <div class="sheet-content">
             <label>スポット名</label>
             <input type="text" id="edit-title" class="form-input">
+        
+            <label>開始時刻</label>
+            <input type="time" id="edit-start-time" class="form-input">
+        
             <label>滞在時間（時間）</label>
             <input type="number" id="edit-duration" class="form-input" step="0.5" min="0.5">
+        
             <label>ブロックの色（18色）</label>
             <div id="color-picker" class="color-picker"></div>
+        
             <div class="cost-box">
-                <h3>💰 費用の概算とメモ</h3>
-                <p id="sheet-cost" class="price"></p>
+                <h3>💰 入場料</h3>
+                <input type="number" id="edit-entry-fee" class="form-input" step="1" min="0" placeholder="0">
+            </div>
+        
+            <div class="cost-box">
+                <h3>🛍️ 購入するアイテム</h3>
+                <div id="items-list" class="cost-list"></div>
+                <button type="button" id="add-item-btn" class="secondary-btn">＋ アイテムを追加</button>
+            </div>
+        
+            <div class="cost-box">
+                <h3>🍽️ 食べ物</h3>
+                <div id="foods-list" class="cost-list"></div>
+                <button type="button" id="add-food-btn" class="secondary-btn">＋ 食べ物を追加</button>
+            </div>
+        
+            <div class="cost-box">
+                <h3>🧾 金額の合計</h3>
+                <p id="sheet-cost" class="price">合計: 0 円</p>
+                <p id="sheet-cost-detail" class="cost-detail"></p>
+            </div>
+        
+            <div class="cost-box">
+                <h3>📝 メモ</h3>
                 <textarea id="edit-memo" class="form-textarea" rows="3" placeholder="メモを自由に入力"></textarea>
             </div>
+        
             <button id="save-spot-btn" class="primary-btn">内容を保存</button>
             <button id="delete-spot-btn" class="danger-btn">この予定を削除</button>
         </div>
