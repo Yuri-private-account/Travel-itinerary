@@ -400,43 +400,19 @@ function addSpotToItinerary(spotInfo = {}) {
         estimated: spotInfo.estimated
     });
 
-    if (window.fbDB) {
-        window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
-            const data = Array.isArray(currentData) ? currentData : Object.values(currentData || {});
-            data.push(newBlock);
-            return data;
-        }).then(() => {
-            openEditSheet(newBlock);
-        }).catch((error) => {
-            console.error(error);
-            alert("しおりの追加に失敗しました。");
-        });
-    } else {
-        itineraryData.push(newBlock);
-        saveData();
-        openEditSheet(newBlock);
-    }
+    itineraryData.push(newBlock);
+    saveData();
+    renderItinerary();
+    openEditSheet(newBlock);
 }
 
 function addManualBlock() {
     const newBlock = createBaseBlock({ title: '新しい予定' });
 
-    if (window.fbDB) {
-        window.fbRunTransaction(window.fbRef(window.fbDB, 'itinerary'), (currentData) => {
-            const data = Array.isArray(currentData) ? currentData : Object.values(currentData || {});
-            data.push(newBlock);
-            return data;
-        }).then(() => {
-            openEditSheet(newBlock);
-        }).catch((error) => {
-            console.error(error);
-            alert("手動の予定追加に失敗しました。");
-        });
-    } else {
-        itineraryData.push(newBlock);
-        saveData();
-        openEditSheet(newBlock);
-    }
+    itineraryData.push(newBlock);
+    saveData();
+    renderItinerary();
+    openEditSheet(newBlock);
 }
 
 function renderItinerary() {
